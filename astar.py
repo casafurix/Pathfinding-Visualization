@@ -1,5 +1,4 @@
 import pygame
-import math
 from queue import PriorityQueue
 
 
@@ -75,18 +74,28 @@ class Spot:
         self.color = WHITE
 
     def update_neighbors(self, grid):
-        pass
+        self.neighbors = []
+        if (
+            self.row < self.total_rows - 1
+            and not grid[self.row + 1][self.col].is_barrier()  # DOWN
+        ):
+            self.neighbors.append(grid[self.row + 1][self.col])
+
+        if self.row > 0 and not grid[self.row - 1][self.col].is_barrier():  # UP
+            self.neighbors.append(grid[self.row - 1][self.col])
+
+        if (
+            self.col < self.total_rows - 1
+            and not grid[self.row][self.col + 1].is_barrier()  # RIGHT
+        ):
+            self.neighbors.append(grid[self.row][self.col + 1])
+
+        if self.col > 0 and not grid[self.row][self.col - 1].is_barrier():  # RIGHT
+            self.neighbors.append(grid[self.row][self.col - 1])
 
     # less than
     def __lt__(self, other):
         return False
-
-
-# heuristic function
-def h(p1, p2):
-    x1, y1 = p1
-    x2, y2 = p2
-    return abs(x1 - x2) + abs(y1 - y2)  # manhattan distance formula
 
 
 def make_grid(rows, width):
@@ -133,6 +142,78 @@ def get_clicked_position(pos, rows, width):
     return row, col
 
 
+# heuristic function
+def h(p1, p2):
+    x1, y1 = p1
+    x2, y2 = p2
+    return abs(x1 - x2) + abs(y1 - y2)  # manhattan distance formula
+
+
+# the start node isn't originally present in came_from, we trace it by going back one node, from the current node, which is the end node, and we repeat the function until we reach the start node.
+def reconstruct_path(came_from, current, draw):
+    while current in came_from:
+        current = came_from[current]
+        current.make_path()
+        draw()
+
+
+def algorithm(draw, grid, start, end):
+    count = 0
+
+    # priority queue is an efficient way to get the smallest element everytime out of it (uses heap-sort algorithm)
+    open_set = PriorityQueue()
+    open_set.put((0, count, start))  # f-score, count and start node
+    came_from = {}
+    g_score = {spot: float("inf") for row in grid for spot in row}
+    # same as
+    # for row in grid:
+    #   for spot in row:
+    #       spot = float("inf")
+    g_score[start] = 0
+
+    f_score = {spot: float("inf") for row in grid for spot in row}
+    f_score[start] = h(start.get_pos(), end.get_pos())
+
+    open_set_hash = {start}
+
+    # if we want to quit when algorithm is running
+    while not open_set.empty():
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+
+        current = open_set.get()[2]  # index 2 of open_set -> node
+        open_set_hash.remove(current)
+
+        if current == end:
+            reconstruct_path(
+                came_from, end, draw
+            )  # we have found the shortest path, now make the path, from start to end, where came_from = start, and end = end node!
+            end.make_end()  # so that the end node doesn't turn purple too, it stays turquoise
+            return True
+
+        for neighbor in current.neighbors:
+            temp_g_score = g_score[current] + 1
+
+            if temp_g_score < g_score[neighbor]:
+                came_from[neighbor] = current
+                g_score[neighbor] = temp_g_score
+                f_score[neighbor] = temp_g_score + h(neighbor.get_pos(), end.get_pos())
+
+                if neighbor not in open_set_hash:
+                    count += 1
+                    open_set.put((f_score[neighbor], count, neighbor))
+                    open_set_hash.add(neighbor)
+                    neighbor.make_open()
+
+        draw()
+
+        if current != start:
+            current.make_closed()
+
+    return False  # if we didn't find a path
+
+
 def main(win, width):
     ROWS = 50
     grid = make_grid(ROWS, width)
@@ -148,8 +229,6 @@ def main(win, width):
             if event.type == pygame.QUIT:
                 run = False
 
-            if started:
-                continue
             # [0] for left mouse button
             if pygame.mouse.get_pressed()[0]:
                 pos = pygame.mouse.get_pos()
@@ -174,6 +253,19 @@ def main(win, width):
                     start = None
                 elif spot == end:
                     end = None
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE and start and end:
+                    for row in grid:
+                        for spot in row:
+                            spot.update_neighbors(grid)
+
+                    algorithm(lambda: draw(win, grid, ROWS, width), grid, start, end)
+
+                if event.key == pygame.K_c:
+                    start = None
+                    end = None
+                    grid = make_grid(ROWS, width)
 
     pygame.quit()
 
